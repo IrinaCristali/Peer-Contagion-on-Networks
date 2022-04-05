@@ -1,10 +1,11 @@
-### Model Training and Prediction Code for Experiments Section 6.2 - "Binary outcome"
 import argparse
 import datetime
+from typing import Dict, Union, Any
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from numpy import ndarray
 
 from relational_erm.data_cleaning.pokec import load_data_pokec
 from relational_erm.data_cleaning.simulate_treatment_outcome import simulate_from_pokec_covariate_treatment_label, \
@@ -179,25 +180,27 @@ def create_predict_dataset(args, graph_data, treatments, outcomes):
     prediction_generator = make_prediction_generator()
     return prediction_generator
 
-#
-# ###UNSUPERVISED LEARNING MODEL
-# def make_edge_model(num_vertices=80000, embedding_dim=128):
-#     edge_list = tf.keras.Input(shape=[None, 2], dtype=tf.float32, name="canonical_edge_list")  # n_edges_max
-#     embedding_fn = tf.keras.layers.Embedding(num_vertices, embedding_dim, input_length=None, mask_zero=True)
-#     edge_list_start = edge_list[:, :, 0]  # batch, n_edges_max
-#     edge_list_end = edge_list[:, :, 1]  # batch, n_edges_max
-#     embeddings0 = embedding_fn(edge_list_start)  # batch, n_edges_max, 128
-#     embeddings1 = embedding_fn(edge_list_end)  # batch, n_edges_max, 128
-#     # parser = add_parser_sampling_arguments()
-#     # args = parser.parse_args()
-#     half1 = embeddings1[:, :, 0:64]
-#     half2 = embeddings1[:, :, 64:128] * (-1)
-#     embed1 = tf.concat([half1, half2], 2)
-#     product = embeddings0 * embed1  # batch, n_edges_max, 128
-#     edge_predictions = tf.math.reduce_sum(product, axis=-1)  # batch, n_edges_max
-#     return tf.keras.Model(
-#         inputs=[{'edge_list': edge_list}],
-#         outputs=[{'weights': edge_predictions}])
+
+###UNSUPERVISED LEARNING MODEL
+def make_edge_model(num_vertices=80000, embedding_dim=128):
+    edge_list = tf.keras.Input(shape=[None, 2], dtype=tf.float32, name="canonical_edge_list")  # n_edges_max
+    embedding_fn = tf.keras.layers.Embedding(num_vertices, embedding_dim, input_length=None, mask_zero=True)
+    edge_list_start = edge_list[:, :, 0]  # batch, n_edges_max
+    edge_list_end = edge_list[:, :, 1]  # batch, n_edges_max
+    embeddings0 = embedding_fn(edge_list_start)  # batch, n_edges_max, 128
+    embeddings1 = embedding_fn(edge_list_end)  # batch, n_edges_max, 128
+    # parser = add_parser_sampling_arguments()
+    # args = parser.parse_args()
+    half1 = embeddings1[:, :, 0:64]
+    half2 = embeddings1[:, :, 64:128] * (-1)
+    embed1 = tf.concat([half1, half2], 2)
+    product = embeddings0 * embed1  # batch, n_edges_max, 128
+    edge_predictions = tf.math.reduce_sum(product, axis=-1)  # batch, n_edges_max
+    return tf.keras.Model(
+        inputs=[{'edge_list': edge_list}],
+        outputs=[{'weights': edge_predictions}])
+
+###MODEL WHICH TAKES IN PRE_TRAINED EMBEDDINGS AND PREDICTS LAYERS
 
 
 ###SUPERVISED LEARNING MODEL:
@@ -206,13 +209,17 @@ def make_outcome_model(num_vertices=80000, embedding_dim=128):
     vertex_index = tf.keras.Input(shape=[None], dtype=tf.float32, name='vertex_list')
     treatment = tf.keras.Input(shape=[None], dtype=tf.float32, name='treatment')
     vert_mask = tf.keras.Input(shape=[None], dtype=tf.float32, name='vert_mask')
+
     embedding_fn = tf.keras.layers.Embedding(num_vertices, embedding_dim, input_length=None, mask_zero=True)
+
     # edge stuff
     # make predictions for each edge
     edge_list_start = edge_list[:, :, 0]  # batch, n_edges_max
     edge_list_end = edge_list[:, :, 1]  # batch, n_edges_max
     embeddings0 = embedding_fn(edge_list_start)  # batch, n_edges_max, 128
     embeddings1 = embedding_fn(edge_list_end)  # batch, n_edges_max, 128
+    #parser = add_parser_sampling_arguments()
+    #args = parser.parse_args()
     half1 = embeddings1[:, :, 0:64]
     half2 = embeddings1[:, :, 64:128]
     embed1 = tf.concat([half1, half2], 2)
@@ -259,8 +266,9 @@ def main():
     #### MAKING THE MODEL
 
     m = make_outcome_model(num_vertices=80000, embedding_dim=128)
+    #sgd = tf.keras.optimizers.SGD(lr=4e-4, decay=1e-6, momentum=0.9, nesterov=True)
     m.compile(
-        optimizer=tf.keras.optimizers.Adam(lr=1e-3),
+        optimizer=tf.keras.optimizers.Adam(lr=1e-3), #4.5e-4
         loss=
         {'weights': tf.keras.losses.BinaryCrossentropy(from_logits=True),
          'outcome': tf.keras.losses.BinaryCrossentropy(from_logits=False)},
