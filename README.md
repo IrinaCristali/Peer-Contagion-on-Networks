@@ -55,9 +55,9 @@ python -m relational_erm.data_cleaning.Confidence_Intervals
 python -m relational_erm.rerm_model.keras_model2 --covariate COVARIATE --seed SEED
 ```
 
-where, similarly to the continuous case, COVARIATE can be anything from 'region', 'registration', 'age', and the s=SEED can take any value from 1 to 100. This script also produces a csv file with outcome predictions for each node under hypothetical interventional treatments T = all 0's and T = all 1's, and these results are also included in the 'cluster_simulations' forlder. 
+where, similarly to the continuous case, COVARIATE can be anything from 'region', 'registration', 'age', and the s=SEED can take any value from 1 to 100. This script also produces a csv file with outcome predictions for each node under hypothetical interventional treatments T = all 0's and T = all 1's, and these results are also included in the 'cluster_simulations' folder. 
 
-As above, the average peer contagion effects together with their error bands can be optained by running 
+As above, the average peer contagion effects together with their error bands can be obtained by running 
 
 ```
 python -m relational_erm.data_cleaning.Confidence_Intervals 
