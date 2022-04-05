@@ -1,21 +1,23 @@
-### Model Training and Prediction Code for Experiments Section 6.1 - "Continuous outcome"
 import argparse
 import datetime
+from typing import Dict, Union, Any
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from numpy import ndarray
 
-from relational_erm.data_cleaning.pokec import load_data_pokec
+from relational_erm.data_cleaning.pokec import load_data_pokec, process_pokec_attributes
 from relational_erm.data_cleaning.simulate_treatment_outcome import simulate_from_pokec_covariate, \
     simulate_from_pokec_covariate_treatment_all0, simulate_from_pokec_covariate_treatment_all1
 from relational_erm.sampling import adapters, factories
+from sklearn.linear_model import LogisticRegression, LinearRegression, Ridge
 
 
 def add_parser_sampling_arguments(parser=None):
     if parser is None:
         parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', type=int, default=50)
+    parser.add_argument('--seed', type=int, default=2)
     parser.add_argument('--max-steps', type=int, default=1000)
     parser.add_argument('--proportion-censored', type=float, default=0,
                         help='proportion of censored vertex labels at train time.')
@@ -45,9 +47,9 @@ def add_parser_sampling_arguments(parser=None):
                         help='negative examples per vertex for negative sampling')
     parser.add_argument('--num-negative-total', type=int, default=None,
                         help='total number of negative vertices sampled')
-    parser.add_argument('--beta_1', type=float, default=10,
+    parser.add_argument('--beta_1', type=float, default=1,
                         help='beta_1 parameter')
-    parser.add_argument('--covariate', type=str, default='registration',
+    parser.add_argument('--covariate', type=str, default='region',
                         help='covariate to use as "hidden" confounder')
     return parser
 
@@ -140,6 +142,7 @@ def make_no_graph_input_fn0(graph_data, args, treatments, outcomes, filter_test=
                 yield ls
 
         dataset = tf.data.Dataset.from_generator(gen, output_types={k: tf.int64 for k in metadata})
+        # dataset = dataset.shuffle(buffer_size=num_samples, reshuffle_each_iteration=True)
         data_processing = adapters.compose(
             adapters.append_vertex_labels(treatments, 'treatment'),
             adapters.append_vertex_labels(metadata['weights'], 'weights'),
@@ -194,23 +197,27 @@ def create_predict_dataset_t1(args, graph_data, treatments, outcomes):
     return prediction_generator
 
 
-#
-# ###UNSUPERVISED LEARNING MODEL
-# def make_edge_model(num_vertices=80000, embedding_dim=128):
-#     edge_list = tf.keras.Input(shape=[None, 2], dtype=tf.float32, name="canonical_edge_list")  # n_edges_max
-#     embedding_fn = tf.keras.layers.Embedding(num_vertices, embedding_dim, input_length=None, mask_zero=True)
-#     edge_list_start = edge_list[:, :, 0]  # batch, n_edges_max
-#     edge_list_end = edge_list[:, :, 1]  # batch, n_edges_max
-#     embeddings0 = embedding_fn(edge_list_start)  # batch, n_edges_max, 128
-#     embeddings1 = embedding_fn(edge_list_end)  # batch, n_edges_max, 128
-#     half1 = embeddings1[:, :, 0:64]
-#     half2 = embeddings1[:, :, 64:128]
-#     embed1 = tf.concat([half1, half2], 2)
-#     product = embeddings0 * embed1  # batch, n_edges_max, 128
-#     edge_predictions = tf.math.reduce_sum(product, axis=-1)  # batch, n_edges_max
-#     return tf.keras.Model(
-#         inputs=[{'edge_list': edge_list}],
-#         outputs=[{'weights': edge_predictions}])
+###UNSUPERVISED LEARNING MODEL
+def make_edge_model(num_vertices=80000, embedding_dim=128):
+    edge_list = tf.keras.Input(shape=[None, 2], dtype=tf.float32, name="canonical_edge_list")  # n_edges_max
+    embedding_fn = tf.keras.layers.Embedding(num_vertices, embedding_dim, input_length=None, mask_zero=True)
+    edge_list_start = edge_list[:, :, 0]  # batch, n_edges_max
+    edge_list_end = edge_list[:, :, 1]  # batch, n_edges_max
+    embeddings0 = embedding_fn(edge_list_start)  # batch, n_edges_max, 128
+    embeddings1 = embedding_fn(edge_list_end)  # batch, n_edges_max, 128
+    # parser = add_parser_sampling_arguments()
+    # args = parser.parse_args()
+    half1 = embeddings1[:, :, 0:64]
+    half2 = embeddings1[:, :, 64:128]
+    embed1 = tf.concat([half1, half2], 2)
+    product = embeddings0 * embed1  # batch, n_edges_max, 128
+    edge_predictions = tf.math.reduce_sum(product, axis=-1)  # batch, n_edges_max
+    return tf.keras.Model(
+        inputs=[{'edge_list': edge_list}],
+        outputs=[{'weights': edge_predictions}])
+
+
+###MODEL WHICH TAKES IN PRE_TRAINED EMBEDDINGS AND PREDICTS LAYERS
 
 
 ###SUPERVISED LEARNING MODEL:
@@ -241,8 +248,8 @@ def make_outcome_model(num_vertices=80000, embedding_dim=128):
     vertex_ind = vertex_index * vert_mask
     vertex_embed = embedding_fn(vertex_ind)  # batch, n_vertices_max, 128
 
-    # lin_layer0 = tf.keras.layers.Dense(units=1, name='forcing_treatment')
-    # treatment_hat = tf.squeeze(lin_layer0(vertex_embed))
+    #lin_layer0 = tf.keras.layers.Dense(units=1, name='forcing_treatment')
+    #treatment_hat = tf.squeeze(lin_layer0(vertex_embed))
 
     treatment_embed_concatenate = tf.keras.layers.Concatenate(axis=2)([tf.expand_dims(treatment, 2), vertex_embed])
 
@@ -278,12 +285,11 @@ def main():
 
     m = make_outcome_model(num_vertices=80000, embedding_dim=128)
     m.compile(
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.0045 * 100),
-        # 0.005 is good gives 0.85 causal ef #0.0024 ->0.87
+        optimizer=tf.keras.optimizers.SGD(learning_rate=0.003 * 100), #0.0024 ->0.87
         loss=
         {'weights': tf.keras.losses.BinaryCrossentropy(from_logits=True),
          'outcome': 'mse'},
-        loss_weights={'weights': 1, 'outcome': 0.005},  # 0.005
+        loss_weights={'weights': 1, 'outcome': 0.005}, #0.005
         metrics={'weights': tf.keras.metrics.BinaryAccuracy(name="binary_accuracy", dtype=None),
                  'outcome': [tf.keras.metrics.MeanSquaredError()]}
     )
@@ -294,7 +300,7 @@ def main():
     beta_1 = args.beta_1
     cov = args.covariate
 
-    ### FITTING THE MODEL AND PREDICTING:
+    ### FITTING THE MODEL AND PREDICTING ---- EXPERIMENT 1:
 
     graph_data, profiles = load_data_pokec('dat/pokec/regional_subset')
     data_dir = 'dat/pokec/regional_subset'
@@ -324,15 +330,14 @@ def main():
           # validation_steps=50,
           # shuffle=True
           )
-
+    results = m.evaluate(prediction_generator, steps=100)
+    predictions = m.predict(prediction_generator, steps=100)
     ### EVALUATE AND MAKE PREDICTIONS
-
-    results = m.evaluate(prediction_generator, steps=10)
-    predictions = m.predict(prediction_generator, steps=10)
-
-    predictions0 = m.predict(prediction_generator_treatment_all0, steps=10)
-    predictions1 = m.predict(prediction_generator_treatment_all1, steps=10)
+    predictions0 = m.predict(prediction_generator_treatment_all0, steps=100)
+    predictions1 = m.predict(prediction_generator_treatment_all1, steps=100)
     print(predictions1['outcome'].mean() - predictions0['outcome'].mean())
+    breakpoint()
+    ## MODEL EVALUATION
 
     out_dict = {}
     out_dict['expected_outcome_st_no_treatment'] = predictions0['outcome'].squeeze()
@@ -347,7 +352,7 @@ def main():
 
     print('Storing Simulated Outcome Values')
 
-    for _ in range(10):
+    for _ in range(100):
         sample0 = next(itr0)
         outcome0 = tf.squeeze(sample0[1]['outcome'])
         out_dict['outcome_no_treatment'] = np.append(out_dict['outcome_no_treatment'], outcome0)
@@ -362,6 +367,8 @@ def main():
 
     predictions = pd.DataFrame(out_dict)
     predictions.to_csv(f'outcome_beta1_{beta_1}_cov_{cov}_seed_{args.seed}.csv', sep='\t', header='true')
+
+    breakpoint()
 
 
 if __name__ == "__main__":
