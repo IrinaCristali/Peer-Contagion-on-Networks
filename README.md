@@ -63,7 +63,5 @@ As above, the average peer contagion effects together with their error bands can
 python -m relational_erm.data_cleaning.Confidence_Intervals 
 ```
 
-3. Finally, the way the treatment and outcome where simulated for the continuous and binary scenarios in this paper is shown in the Python module located at "src/relational_erm/data_cleaning/simulate_treatment_outcome.py". This file also computes the unadjusted, naive, peer contagion effects. 
-
-The code corresponding to the parametric baseline method for peer contagion can be found at "src/relational_erm/data_cleaning/simulate_baseline_sbm.py". 
+3. Finally, the way the treatment and outcome where simulated for the continuous and binary scenarios in this paper is shown in the Python module located at "src/relational_erm/data_cleaning/simulate_treatment_outcome.py". This file also computes the unadjusted, naive, peer contagion effects. The code corresponding to the parametric baseline method for peer contagion can be found at "src/relational_erm/data_cleaning/simulate_baseline_sbm.py". 
 
