@@ -9,7 +9,7 @@ def mean_confidence_interval(a):
     return m, se
 
 
-folder = '/Users/irinacristali/PycharmProjects/pythonProject/POKEC_EMBEDDINGS_V4/CLUSTER_RESULTS'
+folder = 'src/cluster_simulations'
 
 filelist = [file for file in os.listdir(folder) if file.startswith('outcome_beta1_10_cov_registration_seed')]
 
